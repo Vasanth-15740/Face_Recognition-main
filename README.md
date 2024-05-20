@@ -32,5 +32,9 @@ It allows users to register their faces, detect and recognize faces from live we
 ## Installation
 
 1. Clone the repository
-2.Install the requiremnts Mentiond
-3.Use the code
+2. Navigate to Directory
+3. Install Dependencies
+4. Set Up Environment
+           Set up a virtual environment using `python -m venv env`.
+6. Run the Application
+           Execute the main script using `python Face_Recognition.py`.
