@@ -1,0 +1,231 @@
+import os
+import smtplib
+from tkinter import filedialog, PhotoImage, messagebox
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import customtkinter as cstk
+import cv2
+import face_recognition
+import numpy as np
+import pyautogui
+from datetime import datetime
+import threading
+
+# Constants
+IMAGE_PATH = "ImagesAttendance"
+NAME_ONLY_PATH = "only_name"
+ATTENDANCE_CSV_PATH = "Attendance.csv"
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SENDER_EMAIL = "Email"
+SENDER_PASSWORD = "#Pass"
+
+# GUI Settings
+cstk.set_appearance_mode("dark")
+cstk.set_default_color_theme("green")
+root = cstk.CTk()
+root.geometry("1920x1080")
+root.title("Facial Recognition System")
+
+# Global Variables
+images = []
+image_names = []
+encode_list = []
+attendance_dict = {}
+deleted_names = []
+deleted_indices = []
+scan_thread = None
+
+# Functions
+def load_images_from_directory(directory):
+    image_files = os.listdir(directory)
+    for file in image_files:
+        img = cv2.imread(f'{directory}/{file}')
+        images.append(img)
+        image_names.append(os.path.splitext(file)[0])
+    return images, image_names
+
+def find_encodings(images):
+    encode_list = []
+    for image in images:
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        encodings = face_recognition.face_encodings(rgb_image)
+        if encodings:
+            encode_list.append(encodings[0])
+        else:
+            print("No faces found in one of the images.")
+    return encode_list
+
+def send_email():
+    subject = "Attendance Report"
+    body = "Attached is the attendance report for today."
+    recipient_email = "recipient_email@example.com"
+
+    message = MIMEMultipart()
+    message["From"] = SENDER_EMAIL
+    message["To"] = recipient_email
+    message["Subject"] = subject
+    message.attach(MIMEText(body, "plain"))
+
+    with open(ATTENDANCE_CSV_PATH, "rb") as attachment:
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(attachment.read())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(ATTENDANCE_CSV_PATH)}")
+        message.attach(part)
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, recipient_email, message.as_string())
+    print("Email sent successfully!")
+
+def save_image(image, name):
+    file_path = os.path.join(NAME_ONLY_PATH, f"{name}.jpg")
+    if name not in os.listdir(NAME_ONLY_PATH):
+        cv2.imwrite(file_path, image)
+
+def mark_attendance(name):
+    with open(ATTENDANCE_CSV_PATH, 'r+') as file:
+        lines = file.readlines()
+        attendance_dict = {line.split(',')[0]: line.split(',')[1:] for line in lines}
+
+        now = datetime.now()
+        current_time = now.strftime("%I:%M %p")
+
+        if name not in attendance_dict:
+            attendance_dict[name] = [current_time, ""]
+        else:
+            attendance_dict[name][1] = current_time
+
+        file.seek(0)
+        for key, value in attendance_dict.items():
+            file.write(f"{key},{value[0].strip()},{value[1].strip()}\n")
+
+def webcam_scan():
+    global scan_thread
+    cap = cv2.VideoCapture(0)
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            resized_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+            rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+
+            face_locations = face_recognition.face_locations(rgb_frame)
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+            cv2.putText(frame, f'Number of faces detected: {len(face_locations)}', (100, 450), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 0, 255), 2)
+            for encoding, location in zip(face_encodings, face_locations):
+                matches = face_recognition.compare_faces(encode_list, encoding, tolerance=0.5)
+                face_distances = face_recognition.face_distance(encode_list, encoding)
+                best_match_index = np.argmin(face_distances)
+
+                if matches[best_match_index]:
+                    name = image_names[best_match_index].upper()
+                else:
+                    name = "UNKNOWN"
+
+                y1, x2, y2, x1 = [v * 4 for v in location]
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 0), 2)
+                cv2.rectangle(frame, (x1, y2 - 35), (x2, y2), (255, 255, 0), cv2.FILLED)
+                cv2.putText(frame, name, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 255), 2)
+
+                if name != "UNKNOWN":
+                    save_image(frame, name)
+                    mark_attendance(name)
+
+            cv2.imshow('Webcam', frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    except Exception as e:
+        print(f"Error during webcam scanning: {e}")
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+        scan_thread = None
+
+def start_webcam_scan():
+    global scan_thread
+    if scan_thread is None:
+        scan_thread = threading.Thread(target=webcam_scan)
+        scan_thread.start()
+    else:
+        messagebox.showinfo("Info", "Webcam scan is already running")
+
+def take_picture():
+    name = pyautogui.prompt('What is your name?', title="Name", default="new_image")
+    if not name:
+        return
+
+    new_filename = f"{name}.jpg"
+    messagebox.showinfo("Alert", "Look at the Camera in 3 sec!")
+
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    if ret:
+        cv2.imwrite(os.path.join(IMAGE_PATH, new_filename), frame)
+        images.append(frame)
+        image_names.append(name)
+        encode_list.append(face_recognition.face_encodings(frame)[0])
+        cv2.imshow("New Image", frame)
+        cv2.waitKey(0)
+        cv2.destroyWindow("New Image")
+    cap.release()
+
+def delete_images():
+    files_to_delete = filedialog.askopenfilenames(title="Select image files", filetypes=(("JPEG files", "*.jpg"), ("All files", "*.*")))
+    for file_path in files_to_delete:
+        os.remove(file_path)
+        name = os.path.splitext(os.path.basename(file_path))[0]
+        index = image_names.index(name)
+        image_names[index] = "unknown"
+        deleted_names.append(name)
+        deleted_indices.append(index)
+    messagebox.showinfo("Info", f"Faces removed: {len(files_to_delete)}\n{', '.join(deleted_names)}")
+
+def open_images_directory(directory):
+    os.startfile(directory)
+
+def open_about():
+    about_file = "ABOUT OURSELVES.png"
+    if os.path.isfile(about_file):
+        os.startfile(about_file)
+    else:
+        messagebox.showerror("Error", f"File not found: {about_file}")
+
+def save_attendance():
+    with open(ATTENDANCE_CSV_PATH, 'w') as file:
+        file.write("NAME,ENTRY,EXIT,TIME_SPENT_IN_MIN\n")
+        for name, times in attendance_dict.items():
+            entry_time, exit_time = times[0].strip(), times[1].strip()
+            if entry_time and exit_time:
+                entry_dt = datetime.strptime(entry_time, "%I:%M %p")
+                exit_dt = datetime.strptime(exit_time, "%I:%M %p")
+                time_spent = (exit_dt - entry_dt).total_seconds() / 60
+                file.write(f"{name},{entry_time},{exit_time},{time_spent:.2f}\n")
+    os.startfile(ATTENDANCE_CSV_PATH)
+
+# Initial setup
+load_images_from_directory(IMAGE_PATH)
+encode_list = find_encodings(images)
+
+# GUI
+frame = cstk.CTkFrame(master=root)
+frame.pack(padx=60, pady=20, fill="both", expand=True)
+label = cstk.CTkLabel(master=frame, text="Face Recognition", font=("Roboto", 24))
+label.place(relx=0.5, rely=0.1, anchor="center")
+
+cstk.CTkButton(master=frame, text="Scan Face", command=start_webcam_scan, height=80, width=250, font=("Arial", 24)).place(relx=0.1, rely=0.3, anchor="w")
+cstk.CTkButton(master=frame, text="Take Picture", command=take_picture, height=80, width=250, font=("Arial", 24)).place(relx=0.8, rely=0.3, anchor="center")
+cstk.CTkButton(master=frame, text="Delete Face", command=delete_images, height=80, width=250, font=("Arial", 24)).place(relx=0.52, rely=0.3, anchor="center")
+cstk.CTkButton(master=frame, text="About Us", command=open_about, height=80, width=250, font=("Arial", 24)).place(relx=0.3, rely=0.85, anchor="e")
+cstk.CTkButton(master=frame, text="Show Scanned Images", command=lambda: open_images_directory(NAME_ONLY_PATH), height=80, width=250, font=("Arial", 24)).place(relx=0.75, rely=0.85, anchor="w")
+cstk.CTkButton(master=frame, text="Open Attendance", command=save_attendance, height=80, width=250, font=("Arial", 24)).place(relx=0.52, rely=0.5, anchor="center")
+cstk.CTkButton(master=frame, text="Send Mail", command=send_email, height=80, width=250, font=("Arial", 24)).place(relx=0.52, rely=0.75, anchor="center")
+
+root.mainloop()
