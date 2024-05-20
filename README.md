@@ -1,15 +1,13 @@
+# Facial Recognition System
+
+This project is a facial recognition system built using Python and tkinter. 
+It allows users to register their faces, detect and recognize faces from live webcam feed, manage attendance records, and perform various other tasks.
 
 ### Steps to Follow
 - Download or clone my Repository to your device
 - type `pip install -r requirements.txt` in command prompt(this will install required package for project)
 - Put a single high quality image of person in `ImagesAttendance` folder in a project folder.
 - Run `attandance.py` file
-
-# Facial Recognition System
-
-This project is a facial recognition system built using Python and tkinter. 
-It allows users to register their faces, detect and recognize faces from live webcam feed, manage attendance records, and perform various other tasks.
-
 ## Usage
 
 1. **Register Your Face:**
