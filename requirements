@@ -1,0 +1,9 @@
+numpy~=1.24.3
+opencv-python~=4.9.0.80
+keyboard
+pyautogui~=0.9.54
+customtkinter~=5.2.2
+dlib
+face-recognition
+cmake
+pillow~=10.2.0
