@@ -129,7 +129,6 @@ def webcam_scan():
                     name = image_names[best_match_index].upper()
                 else:
                     name = "UNKNOWN"
-
                 y1, x2, y2, x1 = [v * 4 for v in location]
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 0), 2)
                 cv2.rectangle(frame, (x1, y2 - 35), (x2, y2), (255, 255, 0), cv2.FILLED)
